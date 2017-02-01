@@ -1,3 +1,5 @@
+import requests
+
 from pyramid.authentication import AuthTktAuthenticationPolicy
 from pyramid.authorization import ACLAuthorizationPolicy
 from pyramid.config import Configurator
@@ -14,12 +16,13 @@ from pyramid.security import (
     authenticated_userid,
     remember,
 )
-
-from saml2 import entity
-
-from .okta import okta_saml_client
-
-saml_client_factory = okta_saml_client
+from saml2 import (
+    BINDING_HTTP_POST,
+    BINDING_HTTP_REDIRECT,
+    entity,
+)
+from saml2.client import Saml2Client
+from saml2.config import Config as Saml2Config
 
 
 def main(global_config, **config):
@@ -55,7 +58,7 @@ def helloworld(request):
 
 @view_config(context=HTTPForbidden)
 def saml_login(request):
-    saml_client = saml_client_factory(request)
+    saml_client = get_saml_client(request)
     reqid, info = saml_client.prepare_for_authenticate()
     for name, value in info['headers']:
         if name == 'Location':
@@ -64,7 +67,7 @@ def saml_login(request):
 
 @view_config(name='saml')
 def saml_callback(request):
-    saml_client = saml_client_factory(request)
+    saml_client = get_saml_client(request)
     authn_response = saml_client.parse_authn_request_response(
         request.params['SAMLResponse'],
         entity.BINDING_HTTP_POST)
@@ -74,3 +77,40 @@ def saml_callback(request):
     response = HTTPFound(request.resource_url(request.root))
     response.headerlist.extend(remember(request, username))
     return response
+
+
+def get_saml_client(request):
+    metadata_url = request.registry.settings['saml_metadata_url']
+    if metadata_url.startswith('file://'):
+        path = metadata_url[7:]
+        metadata = open(path).read()
+    else:
+        metadata = requests.get(metadata_url).text
+
+    acs_url = request.resource_url(request.root, 'saml')
+
+    settings = {
+        'metadata': {
+            'inline': [metadata],
+            },
+        'service': {
+            'sp': {
+                'endpoints': {
+                    'assertion_consumer_service': [
+                        (acs_url, BINDING_HTTP_REDIRECT),
+                        (acs_url, BINDING_HTTP_POST),
+                    ],
+                },
+                'allow_unsolicited': True,
+                'authn_requests_signed': False,
+                'logout_requests_signed': True,
+                'want_assertions_signed': True,
+                'want_response_signed': False,
+            },
+        },
+    }
+    spConfig = Saml2Config()
+    spConfig.load(settings)
+    spConfig.allow_unknown_attributes = True
+    saml_client = Saml2Client(config=spConfig)
+    return saml_client
