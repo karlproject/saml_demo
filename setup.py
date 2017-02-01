@@ -2,6 +2,8 @@ from setuptools import setup, find_packages
 
 requires = [
     'pyramid',
+    'pysaml2',
+    'requests',
 ]
 
 setup(
