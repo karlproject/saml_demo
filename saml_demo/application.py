@@ -23,6 +23,8 @@ from saml2 import (
 )
 from saml2.client import Saml2Client
 from saml2.config import Config as Saml2Config
+from saml2.saml import Issuer
+from saml2.samlp import NameIDPolicy
 
 
 def main(global_config, **config):
@@ -59,7 +61,18 @@ def helloworld(request):
 @view_config(context=HTTPForbidden)
 def saml_login(request):
     saml_client = get_saml_client(request)
-    reqid, info = saml_client.prepare_for_authenticate()
+    issuer = Issuer(
+        text='Open Society Foundation',
+        format='urn:oasis:names:tc:SAML:2.0:nameid-format:entity')
+    #name_id_policy = NameIDPolicy(
+    #    allow_create='true',
+    #    format='urn:oasis:names:tc:SAML:2.0:nameid-format:transient')
+    reqid, info = saml_client.prepare_for_authenticate(
+        issuer=issuer,
+        #version='2.0',
+        #provider_name='google.com',
+        #name_id_policy=name_id_policy,
+    )
     for name, value in info['headers']:
         if name == 'Location':
             return HTTPFound(value)
